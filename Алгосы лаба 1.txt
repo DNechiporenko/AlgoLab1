@@ -1,0 +1,342 @@
+#include <iostream>
+#include <array>
+#include <algorithm>
+#include <cctype>
+ 
+enum OperationType { NOT_OPERATION, ADD, SUB, MUL };
+ 
+OperationType symbolToOperationType(char symbol) {
+    switch(symbol) {
+        case '+':
+            return ADD;
+        case '-':
+            return SUB;
+        case '*':
+            return MUL;
+        default:
+            return NOT_OPERATION;
+    }
+}
+ 
+class Operation {
+private:
+    OperationType operationType = NOT_OPERATION;
+public:
+    OperationType get() {
+        return operationType;
+    }
+    void input() {
+        char next_char;
+        std::cin >> std::skipws >> next_char;
+        operationType = symbolToOperationType(next_char);
+        if (operationType == NOT_OPERATION) {
+            throw "Error: not an operation";
+        }
+    }
+};
+ 
+const char unaryMinusSign = '-';
+const char unaryPlusSign = '+';
+const size_t CNT_BITS = 8;
+const size_t SIGN_BIT = CNT_BITS - 1;
+const long long MIN_NUMBER = -(1LL << (CNT_BITS - 1));
+const long long MAX_NUMBER = (1LL << (CNT_BITS - 1)) - 1;
+ 
+class BinaryNumber {
+private:
+    std::array<bool, CNT_BITS> binaryDigits {};
+ 
+    bool isNegative() const {
+        return binaryDigits[SIGN_BIT];
+    }
+    bool isSameSign(const BinaryNumber& other) const {
+        return isNegative() == other.isNegative();
+    }
+    void addOne() {
+        bool extraBit = 1;
+        for (size_t i = 0; i < CNT_BITS; i++) {
+            int sumBits = (int)binaryDigits[i] + extraBit;
+            binaryDigits[i] = sumBits % 2;
+            extraBit = sumBits / 2;
+        }
+    }
+    void subOne() {
+        bool extraBit = 0;
+        for (size_t i = 0; i < CNT_BITS; i++) {
+            int sumBits = (int)binaryDigits[i] + 1 + extraBit;
+            binaryDigits[i] = sumBits % 2;
+            extraBit = sumBits / 2;
+        }
+    }
+    void inverse() {
+        for (size_t i = 0; i < CNT_BITS; i++) {
+            binaryDigits[i] = !binaryDigits[i];
+        }
+    }
+    bool isMinPossible() const {
+        int sumBits = 0;
+        for (size_t i = 0; i < CNT_BITS; i++) {
+            sumBits += binaryDigits[i];
+        }
+        return (sumBits == 1 && binaryDigits[SIGN_BIT]);
+    }
+    bool isZero() const {
+        for (size_t i = 0; i < CNT_BITS; i++) {
+            if (binaryDigits[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+    static BinaryNumber getMaxPossible() {
+        std::array<bool, CNT_BITS> newBinaryDigits {};
+        for (size_t i = 0; i < SIGN_BIT; i++) {
+            newBinaryDigits[i] = 1;
+        }
+        return BinaryNumber(newBinaryDigits);
+    }
+    BinaryNumber getAbsolute() const {
+        if (isNegative()) {
+            BinaryNumber tmp = *this;
+            tmp.subOne();
+            tmp.inverse();
+            return  tmp;
+        } else {
+            return *this;
+        }
+    }
+    std::pair<BinaryNumber, bool> getUnsafeSum(const BinaryNumber& other) const {
+        std::array<bool, CNT_BITS> newBinaryDigits {};
+        bool extraBit = 0;
+        for (size_t i = 0; i < CNT_BITS; i++) {
+            int sumBits = (int)binaryDigits[i] + other.binaryDigits[i] + extraBit;
+            newBinaryDigits[i] = sumBits % 2;
+            extraBit = sumBits / 2;
+        }
+        return {BinaryNumber(newBinaryDigits), extraBit};
+    }
+    BinaryNumber getSum(const BinaryNumber& other) const {
+        BinaryNumber ans = getUnsafeSum(other).first;
+        if (isSameSign(other) && !isSameSign(ans)) {
+            throw "Error: overflow when calculating";
+        }
+        return ans;
+    }
+    BinaryNumber getShift(size_t cnt) const {
+        BinaryNumber ans = *this;
+        for (int i = CNT_BITS - 1; i >= 0; i--) {
+            if (ans.binaryDigits[i]) {
+                size_t newPos = i + cnt;
+                if (newPos >= CNT_BITS) {
+                    throw "Error: number after multiplying is too big!";
+                }
+                ans.binaryDigits[newPos] = 1;
+                if (cnt > 0) {
+                    ans.binaryDigits[i] = 0;
+                }
+            }
+        }
+        return ans;
+    }
+    BinaryNumber getProduct(const BinaryNumber& other) const {
+        if (isZero() || other.isZero()) {
+            return BinaryNumber("0");
+        }
+        if (isMinPossible() || other.isMinPossible()) {
+            throw "Error: number after multiplying is too big!";
+        }
+        bool signAns = isNegative() ^ other.isNegative();//1 if negative, 0 otherwise
+        BinaryNumber firstNumber = getAbsolute(), secondNumber = other.getAbsolute();
+        BinaryNumber ans("0");
+        for (int i = 0; i < CNT_BITS; i++) {
+            if (firstNumber.binaryDigits[i]) {
+                auto tmp = ans.getUnsafeSum(secondNumber.getShift(i));
+                if (tmp.second) {
+                    throw "Error: number after multiplying is too big!";
+                }
+                ans = tmp.first;
+            }
+        }
+        if (signAns) {
+            if (ans.isMinPossible()) {
+                return ans;
+            } else if (ans.binaryDigits[SIGN_BIT]) {
+                throw "Error: number after multiplying is too small!";
+            } else {
+                ans.inverse();
+                ans.addOne();
+                return ans;
+            }
+        } else {
+            if (ans.binaryDigits[SIGN_BIT]) {
+                throw "Error: number after multiplying is too big!";
+            } else {
+                return ans;
+            }
+        }
+    }
+    BinaryNumber getDifference(const BinaryNumber& other) const {
+        BinaryNumber ans = *this;
+        if (other.isMinPossible()) {
+            ans = ans.getSum(getMaxPossible());
+            ans = ans.getSum(BinaryNumber("1"));
+        } else {
+            BinaryNumber copyOther = other;
+            copyOther.subOne();
+            copyOther.inverse();
+            ans = ans.getSum(copyOther);
+        }
+        return ans;
+    }
+    BinaryNumber(const std::array<bool, CNT_BITS>& _binaryDigits) {
+        binaryDigits = _binaryDigits;
+    }
+    BinaryNumber(std::string numberStr) {
+        bool negative = false;
+        if (numberStr[0] == unaryMinusSign) {
+            negative = true;
+            numberStr.erase(numberStr.begin());
+        }
+        std::reverse(numberStr.begin(), numberStr.end());
+        while (numberStr.size() > 1 && numberStr.back() == '0') {
+            numberStr.pop_back();
+        }
+        std::reverse(numberStr.begin(), numberStr.end());
+        if (numberStr == "0") {
+            negative = false;
+        }
+        std::string maxNumberStr;
+        if (negative) {
+            maxNumberStr = std::to_string(-MIN_NUMBER);
+        } else {
+            maxNumberStr = std::to_string(MAX_NUMBER);
+        }
+        if (numberStr.size() > maxNumberStr.size() || (numberStr.size() == maxNumberStr.size() && numberStr > maxNumberStr)) {
+            throw "Error: inputted number is too big!";
+        }
+        long long numberInt = std::stoll(numberStr);
+        for (size_t i = 0; i < CNT_BITS; i++, numberInt /= 2) {
+            binaryDigits[i] = numberInt % 2;
+        }
+        if (negative) {
+            inverse();
+            addOne();
+        }
+    }
+public:
+    BinaryNumber() = default;
+    void input() {
+        std::string numberStr;
+        char firstSymbol;
+        std::cin >> std::skipws >> firstSymbol;
+        if (std::isdigit(firstSymbol)) {
+            numberStr += firstSymbol;
+        } else {
+            if (firstSymbol == unaryMinusSign || firstSymbol == unaryPlusSign) {
+                if (firstSymbol == unaryMinusSign) {
+                    numberStr += unaryMinusSign;
+                }
+            } else {
+                throw "Error: unknown symbol is inputted";
+            }
+        }
+        while (std::isdigit(std::cin.peek())) {
+            char nextSymbol;
+            std::cin >> nextSymbol;
+            numberStr += nextSymbol;
+        }
+        *this = BinaryNumber(numberStr);
+    }
+    BinaryNumber calculate(const BinaryNumber& other, Operation operation) const {
+        switch (operation.get()) {
+            case ADD:
+                return getSum(other);
+            case SUB:
+                return getDifference(other);
+            case MUL:
+                return getProduct(other);
+            default:
+                throw "Something went wrong";
+        }
+    }
+    std::string getStr(int base) const {
+        BinaryNumber numberCopy = *this;
+        std::string ansStr;
+        if (base == 2) {
+            for (size_t i = 0; i < CNT_BITS; i++) {
+                if (i == SIGN_BIT) {
+                    ansStr += ' ';
+                }
+                if (numberCopy.binaryDigits[i]) {
+                    ansStr += '1';
+                } else {
+                    ansStr += '0';
+                }
+            }
+            std::reverse(ansStr.begin(), ansStr.end());
+        } else if (base == 10) {
+            if (numberCopy.isNegative()) {
+                ansStr += unaryMinusSign;
+                numberCopy.subOne();
+                numberCopy.inverse();
+            }
+            long long ansInt = 0, mul = 1;
+            for (size_t i = 0; i < CNT_BITS; i++, mul *= 2) {
+                ansInt += mul * numberCopy.binaryDigits[i];
+            }
+            ansStr += std::to_string(ansInt);
+        } else {
+            throw "Error: the base can't be handled";
+        }
+        return ansStr;
+    }
+};
+ 
+int main() {
+    BinaryNumber number1, number2;
+    Operation operation;
+ 
+    try {
+        number1.input();
+        std::string numStr = number1.getStr(2);
+        std::cout << "First number entered in 2 notation:СС:" << numStr << std::endl;
+    } catch(const char* message) {
+        std::cout << message << std::endl;
+        return 0;
+    }
+ 
+    try {
+        operation.input();
+    } catch(const char* message) {
+        std::cout << message << std::endl;
+        return 0;
+    }
+ 
+    try {
+        number2.input();
+        std::string numStr = number2.getStr(2);
+        std::cout << "Second number entered in 2 notation:" << numStr << std::endl;
+    } catch(const char* message) {
+        std::cout << message << std::endl;
+        return 0;
+    }
+ 
+    BinaryNumber answer;
+    try {
+        answer = number1.calculate(number2, operation);
+    } catch(const char* message) {
+        std::cout << message << std::endl;
+        return 0;
+    }
+ 
+    std::string ans2, ans10;
+    try {
+        ans2 = answer.getStr(2);
+        ans10 = answer.getStr(10);
+    } catch(const char* message) {
+        std::cout << message << std::endl;
+        return 0;
+    }
+ 
+    std::cout << "Answer in 2 notation: " << ans2 << "\nAnswer in 10 notation: " << ans10;
+}
